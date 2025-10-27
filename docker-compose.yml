@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  news-scraper:
+    build: .
+    container_name: fs-umi-news-scraper
+    restart: unless-stopped
+    environment:
+      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
+      - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
+      - GOOGLE_SPREADSHEET_6ID=${GOOGLE_SPREADSHEET_6ID}
+      - SCRAPER_INTERVAL=${SCRAPER_INTERVAL:-30}
+    volumes:
+      - ./data:/app/data
+    command: ["node", "news-scraper.js", "--schedule"]

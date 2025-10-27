@@ -1,0 +1,30 @@
+{
+  "name": "fs-umi-news-scraper",
+  "version": "1.0.0",
+  "description": "News scraper for FS-UMI website that updates Google Sheets",
+  "type": "module",
+  "main": "news-scraper.js",
+  "scripts": {
+    "start": "node news-scraper.js --schedule",
+    "once": "node news-scraper.js --once",
+    "test": "node news-scraper.js --once"
+  },
+  "keywords": [
+    "scraper",
+    "news",
+    "google-sheets",
+    "fs-umi",
+    "automation"
+  ],
+  "author": "CSC-FSM",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^17.2.3",
+    "googleapis": "^128.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
