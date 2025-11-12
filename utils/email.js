@@ -1,0 +1,432 @@
+const nodemailer = require('nodemailer');
+
+// Cache transporter with a resilient pool. Recreate on failure.
+let transporter = null;
+
+const createTransporter = () => {
+  if (!process.env.YAHOO_EMAIL || !process.env.YAHOO_APP_PASSWORD) {
+    throw new Error('YAHOO_EMAIL or YAHOO_APP_PASSWORD environment variables are not set');
+  }
+  
+  // Check if using placeholder values
+  if (process.env.YAHOO_EMAIL === 'your-email@yahoo.com' || 
+      process.env.YAHOO_APP_PASSWORD === 'your-yahoo-app-password') {
+    throw new Error('YAHOO_EMAIL and YAHOO_APP_PASSWORD must be set to actual values in server/.env file');
+  }
+
+  const t = nodemailer.createTransport({
+    host: 'smtp.mail.yahoo.com',
+    port: 465,
+    secure: true,
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 100,
+    rateLimit: 5, // safety against bursts
+    auth: {
+      user: process.env.YAHOO_EMAIL.trim(),
+      pass: process.env.YAHOO_APP_PASSWORD.trim(),
+    },
+    tls: {
+      rejectUnauthorized: true,
+    },
+    socketTimeout: 30_000,
+    greetingTimeout: 15_000,
+    connectionTimeout: 15_000,
+  });
+
+  return t;
+};
+
+const resetTransporter = async () => {
+  if (transporter) {
+    try {
+      console.log('🔄 Closing existing transporter...');
+      transporter.close();
+    } catch (e) {
+      console.warn('⚠️ Error closing transporter (may already be closed):', e?.message || e);
+    }
+    transporter = null;
+  }
+};
+
+const getTransporter = async () => {
+  if (!transporter) {
+    console.log('📧 Creating new email transporter...');
+    transporter = createTransporter();
+    try {
+      await transporter.verify();
+      console.log('✅ Email transporter verified and cached');
+      console.log(`📧 Using email: ${process.env.YAHOO_EMAIL}`);
+    } catch (e) {
+      console.error('❌ Transporter verify failed on init:', e?.message || e);
+      await resetTransporter();
+      throw e;
+    }
+  }
+  return transporter;
+};
+
+const sendWelcomeEmail = async (
+  recipientEmail,
+  recipientName,
+  recipientDateNaissance,
+  recipientFiliere,
+  recipientCodeMassar,
+  recipientUserCode
+) => {
+  console.time('📧 Email processing time');
+  console.log(`📧 Attempting to send email to: ${recipientEmail}`);
+  
+  // Validate environment variables
+  if (!process.env.YAHOO_EMAIL || !process.env.YAHOO_APP_PASSWORD) {
+    const error = 'YAHOO_EMAIL or YAHOO_APP_PASSWORD environment variables are not set';
+    console.error(`❌ ${error}`);
+    console.timeEnd('📧 Email processing time');
+    return { success: false, error };
+  }
+
+  // Generate QR Code URL using QR Server API
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=CSC-MEMBER-${recipientUserCode}&format=png&ecc=M&margin=10&color=000000&bgcolor=ffffff`;
+  const currentYear = new Date().getFullYear().toString();
+
+  // HTML email template with placeholders
+  const htmlTemplate = `
+<body style="margin: 0; padding: 0; font-family: 'Courier New', monospace; background-color: #0a0a0a;">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+      </style>
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background: repeating-linear-gradient(0deg, #0a0a0a 0px, #0a0a0a 2px, #0d0d0e 2px, #0d0d0e 4px);">
+    <tr>
+      <td align="center" class="p-4">
+        <table role="presentation" style="width: 600px; max-width: 100%; border-collapse: collapse; background-color: #101010; border: 2px solid #86cb25; box-shadow: 0 0 20px rgba(134, 203, 37, 0.3), inset 0 0 20px rgba(134, 203, 37, 0.1);">
+          
+          <!-- Header with CSC Logo -->
+          <tr>
+            <td style="padding: 0; position: relative; background: linear-gradient(135deg, #0d0d0e 0%, #1a1a1a 100%); border-bottom: 2px solid #86cb25;">
+                <div style="text-align: center; padding: 20px 30px; position: relative; display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap;">
+                    <img src="https://csc-fsm.vercel.app/C.S.C-cropped.png" height="50px" alt="CSC Logo" style="max-width: 100%;">
+                    <img src="https://csc-fsm.vercel.app/partenaire/LOGO_FS_x2-BgRemd.png" width="150px" alt="Faculty of Sciences Logo" style="max-width: 100%;">
+                    <img src="https://csc-fsm.vercel.app/umi.png" width="100px" alt="UMI Logo" style="max-width: 100%;">
+                </div>
+            </td>
+          </tr>
+          
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px; position: relative;">
+              <!-- Corner Decorations -->
+            <h1 style="color: #fff; font-size: 40px; font-weight: 300; text-transform: uppercase; margin-top: 0px; margin-bottom: 0px; font-family: 'Poppins', sans-serif;">
+                Welcome to csc
+            </h1>
+              <!-- Message Header -->
+              <div style="border-left: 3px solid #86cb25; padding-left: 15px; margin-bottom: 25px;">
+                <h2 style="color: #fff; font-size: 20px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">
+                  &gt;&gt; SYSTÈME MESSAGE
+                </h2>
+                <p style="color: #fff; font-size: 12px; margin: 5px 0 0 0; opacity: 0.7;">
+                  STATUS: INSCRIPTION CONFIRMÉE ✓
+                </p>
+              </div>
+              
+              <!-- Main Message -->
+              <div style="background: rgba(134, 203, 37, 0.05); border: 1px solid rgba(134, 203, 37, 0.2); padding: 20px; margin-bottom: 20px;">
+                <p style="color: #86cb25; font-size: 14px; margin: 0 0 10px 0;">
+                  <span style="opacity: 0.7;">&gt;</span> DESTINATAIRE: <span style="color: #fff; font-weight: bold;">${recipientName}</span>
+                </p>
+                
+                <p style="color: #ffffff; font-size: 15px; line-height: 1.8; margin: 20px 0 15px 0; font-family: 'Montserrat', Arial, sans-serif;">
+                    Welcome aboard! 🎊 <br>
+                    We're thrilled to confirm your registration and officially welcome you to the Computer Science Club (CSC – FSM).
+                </p>
+                
+                <p style="color: #ffffff; font-size: 15px; line-height: 1.8; margin: 0 0 15px 0; font-family: 'Montserrat', Arial, sans-serif;">
+                    Your interest and enthusiasm mean a lot to us — you're now part of a community that values innovation, learning, and collaboration in the fields of AI, programming, and technology.
+                </p>
+                
+                <!-- Pixel Separator -->
+                <div style="height: 4px; background: repeating-linear-gradient(90deg, #86cb25 0px, #86cb25 4px, transparent 4px, transparent 8px); margin: 20px 0; opacity: 0.3;"></div>
+                
+                <p style="color: #ffffff; font-size: 15px; line-height: 1.8; margin: 0 0 15px 0; font-family: 'Montserrat', Arial, sans-serif;">
+                    Stay tuned! You'll soon receive updates about upcoming workshops, competitions, and events organized by the club. Each activity is designed to help you learn, create, and connect with other passionate minds like yours.
+                </p>
+
+                
+                <p style="color: #ffffff; font-size: 15px; line-height: 1.8; margin: 0; font-family: 'Montserrat', Arial, sans-serif;">
+                    Once again, welcome to the team — and thank you for choosing to grow with us!
+                </p>
+              </div>
+<div style="background:linear-gradient(135deg,#111 0%,#1b1b1b 50%,#262626 100%);
+            border-radius:12px;
+            border:1px solid rgba(134,203,37,0.4);
+            padding:15px 20px 20px 20px;
+            margin:20px auto;
+            color:#fff;
+            font-family:'Montserrat',Arial,sans-serif;
+            max-width:360px;
+            position:relative;
+            overflow:hidden;
+            box-shadow:0 4px 20px rgba(134,203,37,0.2), inset 0 0 10px rgba(255,255,255,0.05);">
+
+  <!-- Shine overlay -->
+  <div style="position:absolute;top:0;left:0;width:100%;height:100%;
+              background:linear-gradient(135deg,rgba(255,255,255,0.03),transparent 70%);
+              pointer-events:none;"></div>
+
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;position:relative;z-index:1;">
+    <h3 style="color:#86cb25;font-size:13px;letter-spacing:1px;text-transform:uppercase;margin:0;">
+      Computer Science Club – FSM
+    </h3>
+    <p style="font-size:10px;color:#888;margin:0;">YEAR_PLACEHOLDER</p>
+  </div>
+
+  <!-- Member Info -->
+  <div style="position:relative;z-index:1;">
+    <p style="font-size:13px;font-weight:600;letter-spacing:2px;margin:0;color:#e0e0e0;">
+      ${recipientUserCode}
+    </p>
+    <p style="font-size:11px;margin:2px 0 0 0;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+      ${recipientName}
+    </p>
+
+    <!-- Email below name -->
+    <div style="background:linear-gradient(90deg,#333,#1b1b1b);
+                height:20px;
+                margin-top:8px;
+                border-radius:3px;
+                display:flex;
+                align-items:center;
+                padding-left:8px;
+                font-size:10px;
+                color:#aaa;
+                letter-spacing:0.5px;">
+      <a href="mailto:${recipientEmail}" style="color:#aaa;text-decoration:none;">${recipientEmail}</a>
+    </div>
+  </div>
+
+  <!-- Stacked Field & Massar -->
+  <div style="margin-top:12px;position:relative;z-index:1;">
+    <div style="margin-bottom:6px;">
+      <p style="font-size:9px;margin:0;color:#86cb25;text-transform:uppercase;">Field</p>
+      <p style="font-size:11px;margin:0;">${recipientFiliere}</p>
+    </div>
+    <div>
+      <p style="font-size:9px;margin:0;color:#86cb25;text-transform:uppercase;">Massar</p>
+      <p style="font-size:11px;margin:0;">${recipientCodeMassar}</p>
+    </div>
+  </div>
+
+  <!-- QR bottom-right -->
+  <img src="${qrCodeUrl}" alt="QR"
+       style="position:absolute;bottom:15px;right:20px;width:55px;height:55px;
+              border-radius:6px;border:1px solid #86cb25;background:#fff;padding:3px;">
+</div>
+
+
+
+              
+              <!-- CTA Button -->
+              <div style="text-align: center; margin-bottom: 20px;">
+                  <h1 style="color: #fff; font-size: 20px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">stay connected</h1>
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" align="center">
+                <tbody>
+                    <tr>
+                      <td align="center" style="padding:0 6px">
+                        <a href="https://www.instagram.com/csc.fsm/" style="display:inline-block;width:44px;height:44px;border-radius:50%;background:#86cb25;border:1px solid rgba(255,255,255,0.25);text-decoration:none" target="_blank" data-saferedirecturl="https://www.google.com/url?q=https://www.instagram.com/csc.fsm/&amp;source=gmail&amp;ust=1761604985616000&amp;usg=AOvVaw0_4vmwsxt3umqpkeCBhiDl">
+                          <img src="https://ci3.googleusercontent.com/meips/ADKq_NYwFlYOvaGvX92EGQKQfnrbowImPUw84MDbJCYlnkgnrZJ_hY7-cObP-cCi8xmUNQRHxn_dBNuNlHYBE9qx7lzqnhVPEURhzjln2_YtSgShSJkk=s0-d-e1-ft#https://img.icons8.com/ios-filled/24/FFFFFF/instagram-new.png" width="24" height="24" alt="Instagram" style="display:block;margin:10px auto;border:0;outline:0" class="CToWUd" data-bit="iit">
+                        </a>
+                      </td>
+                      
+                      <td align="center" style="padding:0 6px">
+                        <a href="https://www.linkedin.com/company/csc-fsm/" style="display:inline-block;width:44px;height:44px;border-radius:50%;background:#86cb25 ;border:1px solid rgba(255,255,255,0.25);text-decoration:none" target="_blank" data-saferedirecturl="https://www.google.com/url?q=https://www.linkedin.com/company/csc-fsm/&amp;source=gmail&amp;ust=1761604985616000&amp;usg=AOvVaw08O6AZZMOHONpuaV16Ztmy">
+                          <img src="https://ci3.googleusercontent.com/meips/ADKq_NYOtVZLf9Ix-H0XGL7zKJnoNKo6SUMnJHI0rxMjpLWnulQIKacIM0BujimIzRUhvdMbfGnNz0_fOH2pLV8SI-g5SpUF7LDwUycdZ4H-mQ=s0-d-e1-ft#https://img.icons8.com/ios-filled/24/FFFFFF/linkedin.png" width="24" height="24" alt="LinkedIn" style="display:block;margin:10px auto;border:0;outline:0" class="CToWUd" data-bit="iit">
+                        </a>
+                      </td>
+                      
+                      <td align="center" style="padding:0 6px">
+                        <a href="https://web.facebook.com/people/CSC/100087587324649/" style="display:inline-block;width:44px;height:44px;border-radius:50%;background:#86cb25 ;border:1px solid rgba(255,255,255,0.25);text-decoration:none" target="_blank" data-saferedirecturl="https://www.google.com/url?q=https://web.facebook.com/people/CSC/100087587324649/&amp;source=gmail&amp;ust=1761604985616000&amp;usg=AOvVaw25ICgbJU7ooMZ_N7HHzn0O">
+                          <img src="https://ci3.googleusercontent.com/meips/ADKq_NZIom5SxAq2Kwgt36a7SgcpiAF88I21CSi4kGDt2sJgizIPuzluuQ--eIj9kUGboNbnQHmbMnWiYYo5QtOTgsmN0wwlw-g4BNOFS0QmYjEA4L0=s0-d-e1-ft#https://img.icons8.com/ios-filled/24/FFFFFF/facebook-new.png" width="24" height="24" alt="Facebook" style="display:block;margin:10px auto;border:0;outline:0" class="CToWUd" data-bit="iit">
+                        </a>
+                      </td>
+                      
+                      <td align="center" style="padding:0 6px">
+                        <a href="https://whatsapp.com/channel/0029VauSYxI0QeabvoYSmi1F" style="display:inline-block;width:44px;height:44px;border-radius:50%;background:#86cb25 ;border:1px solid rgba(255,255,255,0.25);text-decoration:none" target="_blank" data-saferedirecturl="https://www.google.com/url?q=https://whatsapp.com/channel/0029VauSYxI0QeabvoYSmi1F&amp;source=gmail&amp;ust=1761604985616000&amp;usg=AOvVaw0C_AYFpMX2CPbUZB7trFpr">
+                          <img src="https://ci3.googleusercontent.com/meips/ADKq_NYi43W62S5eoLrmACAxKbBu1HIfQ_pZgMMJr-2RuAAjwCU4duWxVGDvBGPgR_eAnp0Mgke4SUf6FE71ukVs4MW9ICDuCrV2qSqbMZWhkw=s0-d-e1-ft#https://img.icons8.com/ios-filled/24/FFFFFF/whatsapp.png" width="24" height="24" alt="WhatsApp" style="display:block;margin:10px auto;border:0;outline:0" class="CToWUd" data-bit="iit">
+                        </a>
+                      </td>
+                    </tr>
+                  </tbody>
+              </table>
+
+            </td>
+          </tr>
+          
+          <!-- Pixelated Divider -->
+          <tr>
+            <td style="padding: 0; height: 2px; background: repeating-linear-gradient(90deg, #86cb25 0px, #86cb25 8px, #0d0d0e 8px, #0d0d0e 16px);"></td>
+          </tr>
+          
+          <!-- Signature Section with Animated SVG -->
+          <tr>
+            <td style="padding: 30px; background: linear-gradient(180deg, #0d0d0e 0%, #000000 100%); position: relative;">
+              <!-- Scanline Effect -->
+              <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px, rgba(134, 203, 37, 0.03) 2px, rgba(134, 203, 37, 0.03) 4px); pointer-events: none;"></div>
+              
+              <div style="position: relative; z-index: 1;">
+                <p style="color: #86cb25; font-size: 14px; margin: 0 0 20px 0; font-weight: bold; text-transform: uppercase;">
+                  &gt;&gt; MESSAGE TERMINÉ
+                </p>
+                
+                <!-- Animated Signature SVG -->
+                <div style="margin: 20px 0 20px 0; display: flex; align-items: center; gap: 30px;">
+                    <p style="color: #fff; font-size: 14px; margin: 0; font-weight: bold;">
+                        Othmane Ferrah
+                        <br>
+                        Président du CSC
+                    </p>
+                    <img src="https://i.ibb.co/SD5Zj2dg/Rapport-CSC.png" width="100px" alt="Signature" class="CToWUd" data-bit="iit" jslog="138226; u014N:xr6bB; 53:WzAsMl0.">
+                </div>
+                
+               
+                
+                <!-- Pixel Separator -->
+                <div style="height: 2px; background: repeating-linear-gradient(90deg, #86cb25 0px, #86cb25 4px, transparent 4px, transparent 8px); margin: 20px 0; opacity: 0.5;"></div>
+                
+                <p style="color: #666666; font-size: 11px; margin: 0; line-height: 1.6; letter-spacing: 0.5px;">
+                  COMPUTER SCIENCE CLUB<br>
+                  FACULTÉ DES SCIENCES DE MEKNÈS<br>
+                  © YEAR_PLACEHOLDER CSC. TOUS DROITS RÉSERVÉS.
+                </p>
+                
+                <!-- Version Tag -->
+                <div style="margin-top: 15px; padding: 5px 10px; background: rgba(134, 203, 37, 0.1); border: 1px solid rgba(134, 203, 37, 0.3); display: inline-block;">
+                  <p style="color: #86cb25; font-size: 10px; margin: 0; opacity: 0.7;">
+                    SYSTEM v1.0 | BUILD YEAR_PLACEHOLDER.10
+                  </p>
+                </div>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Bottom Pixel Border -->
+          <tr>
+            <td style="padding: 0; height: 1px; background: #86cb25;"></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+  `;
+
+  // Replace all placeholders in the template
+  const htmlContent = htmlTemplate
+    .replace(/\$\{recipientName\}/g, recipientName)
+    .replace(/\$\{recipientEmail\}/g, recipientEmail)
+    .replace(/\$\{recipientUserCode\}/g, recipientUserCode)
+    .replace(/\$\{recipientFiliere\}/g, recipientFiliere)
+    .replace(/\$\{recipientCodeMassar\}/g, recipientCodeMassar)
+    .replace(/\$\{qrCodeUrl\}/g, qrCodeUrl)
+    .replace(/YEAR_PLACEHOLDER/g, currentYear);
+
+  // Email options
+  const mailOptions = {
+    from: `"CSC - Computer Science Club" <${process.env.YAHOO_EMAIL}>`,
+    to: recipientEmail,
+    subject: '🎉 Welcome to the Computer Science Club – Your Registration is Confirmed !',
+    html: htmlContent,
+  };
+
+  let retryCount = 0;
+  const maxRetries = 2;
+  
+  while (retryCount <= maxRetries) {
+    try {
+      if (retryCount > 0) {
+        console.log(`🔄 Retry attempt ${retryCount} for ${recipientEmail}...`);
+        await resetTransporter();
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      const emailTransporter = await getTransporter();
+      console.log(`📧 Sending email to ${recipientEmail} (attempt ${retryCount + 1})...`);
+      const result = await emailTransporter.sendMail(mailOptions);
+      
+      console.timeEnd('📧 Email processing time');
+      console.log(`✅ Email sent successfully to ${recipientEmail}`);
+      console.log(`📧 Message ID: ${result.messageId}`);
+      
+      // Reset transporter after successful send to prevent connection issues
+      // This ensures a fresh connection for the next request
+      await resetTransporter();
+      
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error(`❌ Error sending email (attempt ${retryCount + 1}):`, error.message);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error details:', {
+        code: error.code,
+        command: error.command,
+        response: error.response,
+        responseCode: error.responseCode,
+      });
+      
+      // Reset transporter on ANY error to prevent stuck connections
+      await resetTransporter();
+      
+      // If this was the last retry, return the error
+      if (retryCount >= maxRetries) {
+        console.timeEnd('📧 Email processing time');
+        
+        // Provide helpful error messages
+        let errorMessage = error.message || 'Unknown error occurred';
+        let helpfulHint = '';
+        
+        if (error.code === 'EAUTH') {
+          if (error.response && error.response.includes('Too many bad auth attempts')) {
+            errorMessage = 'Yahoo has temporarily locked the account due to too many failed login attempts.';
+            helpfulHint = '\n💡 Solutions:\n  1. Wait 15-30 minutes before trying again\n  2. Verify your Yahoo App Password is correct\n  3. Make sure you\'re using an App Password (not your regular password)\n  4. Generate a new App Password at: https://login.yahoo.com/account/security';
+          } else {
+            errorMessage = 'Yahoo authentication failed. Check your email and App Password.';
+            helpfulHint = '\n💡 Solutions:\n  1. Verify YAHOO_EMAIL in server/.env matches your Yahoo email\n  2. Make sure you\'re using an App Password (not your regular password)\n  3. Generate a new App Password at: https://login.yahoo.com/account/security\n  4. Check for extra spaces or special characters in your credentials';
+          }
+        } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT' || error.code === 'EPIPE' || error.code === 'ESOCKET') {
+          errorMessage = 'Could not connect to Yahoo SMTP server.';
+          helpfulHint = '\n💡 Solutions:\n  1. Check your internet connection\n  2. Verify firewall isn\'t blocking port 465\n  3. Try again in a few minutes';
+        }
+    
+        if (helpfulHint) {
+          console.error(helpfulHint);
+        }
+        
+        return { 
+          success: false, 
+          error: errorMessage,
+          details: {
+            code: error.code,
+            command: error.command,
+            response: error.response,
+            hint: helpfulHint.trim(),
+          }
+        };
+      }
+      
+      // Otherwise, increment retry count and try again
+      retryCount++;
+    }
+  }
+  
+  // This should never be reached, but just in case
+  console.timeEnd('📧 Email processing time');
+  return {
+    success: false,
+    error: 'Failed to send email after multiple attempts'
+  };
+};
+
+module.exports = {
+  sendWelcomeEmail
+};

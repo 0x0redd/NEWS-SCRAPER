@@ -1,229 +1,254 @@
-# FS-UMI News Scraper
+# CSC API Server
 
-A standalone Node.js script that scrapes news from the FS-UMI website and automatically updates a Google Sheet. This script can run on any server and keep your news data synchronized.
+Backend API server for the CSC landing page. Handles email sending and other backend services.
 
 ## Features
 
-- 🔄 **Automated Scraping**: Fetches news from multiple pages of the FS-UMI website
-- 📊 **Google Sheets Integration**: Automatically updates your Google Sheet with new news
-- 💾 **Local Backup**: Saves data locally as JSON for backup
-- ⏰ **Scheduled Updates**: Can run continuously or as a one-time job
-- 🛡️ **Error Handling**: Robust error handling with detailed logging
-- 🔍 **Duplicate Prevention**: Avoids adding duplicate news items
+- ✅ RESTful API with Express.js
+- ✅ API key authentication
+- ✅ Email sending via Nodemailer (Yahoo SMTP)
+- ✅ Rate limiting for security
+- ✅ CORS configuration
+- ✅ Health check endpoint
+- ✅ Easy to extend for future features
 
-## Prerequisites
+## Setup
 
-- Node.js 18+ installed on your server
-- Google Service Account with Sheets API access
-- Google Sheet with proper permissions
+### 1. Install Dependencies
 
-## Installation
-
-1. **Clone or download the script files:**
-   ```bash
-   # Download the files to your server
-   wget https://your-server.com/news-scraper.js
-   wget https://your-server.com/package.json
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables:**
-   
-   **Option A: Using .env file (Recommended for local development):**
-   ```bash
-   # Copy the example file
-   cp .env.example .env
-   
-   # Edit .env file with your actual credentials
-   # Replace the empty values with your Google Cloud credentials
-   ```
-   
-   **Option B: Using system environment variables:**
-   ```bash
-   export GOOGLE_SERVICE_ACCOUNT_EMAIL="your-service-account@project.iam.gserviceaccount.com"
-   export GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYour-Private-Key-Here\n-----END PRIVATE KEY-----\n"
-   export GOOGLE_SPREADSHEET_6ID="your-google-sheet-id"
-   export SCRAPER_INTERVAL="30"  # Optional: minutes between runs (default: 30)
-   ```
-
-## Usage
-
-### Run Once
 ```bash
-npm run once
-# or
-node news-scraper.js --once
+cd server
+npm install
 ```
 
-### Run Continuously (Scheduled)
+### 2. Configure Environment Variables
+
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set the following variables:
+
+```env
+# Server Configuration
+PORT=3001
+NODE_ENV=production
+
+# API Security - Generate a strong random key
+API_KEY=your-secret-api-key-here
+
+# CORS - Your frontend URL(s)
+ALLOWED_ORIGINS=https://csc-fsm.vercel.app
+
+# Email Configuration
+YAHOO_EMAIL=your-email@yahoo.com
+YAHOO_APP_PASSWORD=your-yahoo-app-password
+```
+
+### Generate API Key
+
+You can generate a secure API key using Node.js:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### 3. Run the Server
+
+**Development mode (with auto-reload):**
+```bash
+npm run dev
+```
+
+**Production mode:**
 ```bash
 npm start
-# or
-node news-scraper.js --schedule
 ```
 
-### Test Run
+The server will start on `http://localhost:3001` (or the port specified in `.env`).
+
+## API Endpoints
+
+### Health Check
+```
+GET /health
+```
+Returns server status.
+
+### Email Service Status
+```
+GET /api/email/status
+Headers: X-API-Key: your-api-key
+```
+Returns email service configuration status.
+
+### Send Welcome Email
+```
+POST /api/email/welcome
+Headers: 
+  X-API-Key: your-api-key
+  Content-Type: application/json
+
+Body:
+{
+  "recipientEmail": "user@example.com",
+  "recipientName": "John Doe",
+  "recipientDateNaissance": "2000-01-01",
+  "recipientFiliere": "Computer Science",
+  "recipientCodeMassar": "MASSAR123",
+  "recipientUserCode": "CSC-ABC12345-6789"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email sent successfully",
+  "messageId": "message-id-from-smtp"
+}
+```
+
+## Deployment
+
+### Option 1: PM2 (Recommended for Linux/VPS)
+
 ```bash
-npm test
-```
-
-## Configuration
-
-Edit the `CONFIG` object in `news-scraper.js` to customize:
-
-```javascript
-const CONFIG = {
-  // Google Sheets
-  SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_6ID,
-  SHEET_NAME: "Sheet1",
-  
-  // Scraping
-  BASE_URL: "https://www.fs-umi.ac.ma/index.php/actualites/",
-  PAGES_TO_FETCH: 3, // Number of pages to scrape
-  REQUEST_DELAY: 1000, // Delay between requests (ms)
-  
-  // Scheduling
-  INTERVAL_MINUTES: parseInt(process.env.SCRAPER_INTERVAL) || 30,
-  
-  // Local storage (backup)
-  DATA_DIR: path.join(__dirname, "data"),
-  NEWS_FILE: "news.json",
-  LOG_FILE: "scraper.log"
-};
-```
-
-## Google Sheets Setup
-
-1. **Create a Google Sheet** with the following columns:
-   - Column A: Title
-   - Column B: Date
-   - Column C: Link
-   - Column D: Image URL
-   - Column E: Categories
-
-2. **Set up a Service Account:**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a new project or select existing
-   - Enable Google Sheets API
-   - Create a Service Account
-   - Download the JSON key file
-   - Share your Google Sheet with the service account email
-
-3. **Set environment variables** with your service account credentials:
-   
-   **For .env file setup:**
-   - Copy `.env.example` to `.env`
-   - Fill in your actual Google Cloud credentials
-   - Make sure to include the `\n` characters in the private key
-   
-   **For system environment variables:**
-   - Set the variables in your shell or system environment
-   - Ensure the private key includes proper newline characters
-
-## Deployment Options
-
-### Option 1: VPS/Server
-```bash
-# Install PM2 for process management
+# Install PM2 globally
 npm install -g pm2
 
-# Start the scraper
-pm2 start news-scraper.js --name "news-scraper" -- --schedule
+# Start the server
+pm2 start index.js --name csc-api
 
 # Save PM2 configuration
 pm2 save
+
+# Setup auto-restart on system reboot
 pm2 startup
 ```
 
-### Option 2: Docker
+### Option 2: Systemd Service (Linux)
+
+Create `/etc/systemd/system/csc-api.service`:
+
+```ini
+[Unit]
+Description=CSC API Server
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/server
+Environment="NODE_ENV=production"
+ExecStart=/usr/bin/node index.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+```bash
+sudo systemctl enable csc-api
+sudo systemctl start csc-api
+```
+
+### Option 3: Docker (Optional)
+
+Create `Dockerfile`:
 ```dockerfile
 FROM node:18-alpine
-
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
-
+RUN npm ci --only=production
 COPY . .
-
-CMD ["node", "news-scraper.js", "--schedule"]
+EXPOSE 3001
+CMD ["node", "index.js"]
 ```
 
-### Option 3: Cron Job
+Build and run:
 ```bash
-# Add to crontab (runs every 30 minutes)
-*/30 * * * * cd /path/to/scraper && node news-scraper.js --once
+docker build -t csc-api .
+docker run -d -p 3001:3001 --env-file .env --name csc-api csc-api
 ```
+
+## Security Best Practices
+
+1. **Never commit `.env` file** - It's already in `.gitignore`
+2. **Use strong API keys** - Generate random 32+ character keys
+3. **Enable HTTPS** - Use a reverse proxy (Nginx/Caddy) with SSL
+4. **Firewall rules** - Only expose the necessary port (3001)
+5. **Rate limiting** - Already configured (100 requests per 15 minutes per IP)
+6. **CORS** - Restrict `ALLOWED_ORIGINS` to your frontend domains only
 
 ## Monitoring
 
-The script creates detailed logs in the `data/scraper.log` file:
+### Logs
 
+Check PM2 logs:
+```bash
+pm2 logs csc-api
 ```
-[2024-01-15T10:30:00.000Z] [INFO] 🔄 Starting news scraping process...
-[2024-01-15T10:30:01.000Z] [INFO] 📚 Loaded 15 existing news items
-[2024-01-15T10:30:02.000Z] [INFO] ✅ Fetched 12 news items from 3 pages
-[2024-01-15T10:30:03.000Z] [INFO] 🆕 Found 3 new news items
-[2024-01-15T10:30:04.000Z] [INFO] ✅ Updated Google Sheets with 18 news items
+
+Or systemd logs:
+```bash
+journalctl -u csc-api -f
 ```
+
+### Health Monitoring
+
+You can set up monitoring to check the `/health` endpoint periodically:
+
+```bash
+curl http://localhost:3001/health
+```
+
+## Extending the Server
+
+To add new endpoints:
+
+1. Create a new route file in `routes/` (e.g., `routes/notifications.js`)
+2. Add the route to `index.js`:
+   ```javascript
+   const notificationsRoutes = require('./routes/notifications');
+   app.use('/api/notifications', notificationsRoutes);
+   ```
+3. Add authentication middleware if needed:
+   ```javascript
+   router.use(validateApiKey);
+   ```
 
 ## Troubleshooting
 
-### Common Issues
+### Email not sending
 
-1. **Google Sheets Access Denied**
-   - Ensure the service account email has access to the sheet
-   - Check that the Google Sheets API is enabled
-   - Verify the spreadsheet ID is correct
+1. Check Yahoo credentials are correct
+2. Verify Yahoo App Password is set (not regular password)
+3. Check firewall isn't blocking port 465
+4. Review server logs for error messages
 
-2. **Scraping Fails**
-   - Check your internet connection
-   - Verify the FS-UMI website is accessible
-   - The website structure might have changed
+### API key not working
 
-3. **Environment Variables Not Set**
-   - Double-check all required environment variables
-   - Ensure the private key includes `\n` characters
+1. Verify API key matches in both server `.env` and client code
+2. Check header name: should be `X-API-Key` or `Authorization: Bearer <key>`
+3. Ensure no extra spaces in the API key
 
-### Debug Mode
+### CORS errors
 
-Run with verbose logging:
-```bash
-DEBUG=* node news-scraper.js --once
-```
-
-## File Structure
-
-```
-news-scraper/
-├── news-scraper.js      # Main scraper script
-├── package.json         # Dependencies and scripts
-├── .env.example         # Environment variables template
-├── .env                 # Your actual environment variables (create this)
-├── README.md           # This file
-└── data/               # Created automatically
-    ├── news.json       # Local backup of news data
-    └── scraper.log     # Detailed logs
-```
-
-## Security Notes
-
-- Keep your service account credentials secure
-- Don't commit environment variables to version control
-- Use environment variables or secure secret management
-- Regularly rotate your service account keys
+1. Verify `ALLOWED_ORIGINS` includes your frontend URL
+2. Check for trailing slashes in URLs
+3. Ensure protocol (http/https) matches
 
 ## Support
 
-For issues or questions:
-1. Check the logs in `data/scraper.log`
-2. Verify your Google Sheets setup
-3. Test with `--once` flag first
-4. Check the FS-UMI website structure
+For issues or questions, check the server logs first:
+```bash
+# PM2
+pm2 logs csc-api
 
-## License
-
-MIT License - Feel free to modify and use as needed.
+# Systemd
+journalctl -u csc-api -n 100
+```

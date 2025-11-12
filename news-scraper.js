@@ -8,6 +8,8 @@
  * 
  * Usage:
  *   node news-scraper.js
+ *   node news-scraper.js --once
+ *   node news-scraper.js --schedule
  * 
  * Environment Variables Required:
  *   - GOOGLE_SERVICE_ACCOUNT_EMAIL
@@ -16,19 +18,12 @@
  *   - SCRAPER_INTERVAL (optional, in minutes, default: 30)
  */
 
-import axios from "axios";
-import * as cheerio from "cheerio";
-import { google } from "googleapis";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import dotenv from "dotenv";
-
-// Load environment variables from .env file
-dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const axios = require("axios");
+const cheerio = require("cheerio");
+const { google } = require("googleapis");
+const fs = require("fs");
+const path = require("path");
+require("dotenv").config();
 
 // Configuration
 const CONFIG = {
@@ -366,10 +361,20 @@ const runScheduled = () => {
   scrapeNews();
   
   // Then run on schedule
-  setInterval(async () => {
+  const intervalId = setInterval(async () => {
     log("⏰ Scheduled run starting...");
     await scrapeNews();
   }, CONFIG.INTERVAL_MINUTES * 60 * 1000);
+  
+  // Return interval ID so it can be cleared if needed
+  return intervalId;
+};
+
+// Export functions for use in other modules
+module.exports = {
+  scrapeNews,
+  runScheduled,
+  runOnce
 };
 
 // Main execution
@@ -401,16 +406,19 @@ const main = () => {
   }
 };
 
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  log("🛑 Received SIGINT, shutting down gracefully...");
-  process.exit(0);
-});
+// Start the application only if run directly (not when required)
+if (require.main === module) {
+  // Handle graceful shutdown (only when running standalone)
+  process.on('SIGINT', () => {
+    log("🛑 Received SIGINT, shutting down gracefully...");
+    process.exit(0);
+  });
 
-process.on('SIGTERM', () => {
-  log("🛑 Received SIGTERM, shutting down gracefully...");
-  process.exit(0);
-});
+  process.on('SIGTERM', () => {
+    log("🛑 Received SIGTERM, shutting down gracefully...");
+    process.exit(0);
+  });
+  
+  main();
+}
 
-// Start the application
-main();
