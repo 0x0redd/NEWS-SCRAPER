@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const os = require('os');
 require('dotenv').config();
 
 const emailRoutes = require('./routes/email');
@@ -16,6 +17,24 @@ try {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0'; // Bind to all interfaces for Docker
+
+// Function to get local IP addresses
+const getLocalIPs = () => {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  
+  return ips;
+};
 
 // Security middleware
 app.use(helmet());
@@ -65,11 +84,31 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 CSC API Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`📧 Email API: http://localhost:${PORT}/api/email`);
+app.listen(PORT, HOST, () => {
+  const localIPs = getLocalIPs();
+  
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🚀 CSC API Server is running!`);
+  console.log(`${'='.repeat(60)}`);
+  console.log(`📍 Port: ${PORT}`);
   console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`\n🌐 Access the API at:`);
+  console.log(`   Local:    http://localhost:${PORT}`);
+  console.log(`   Network:  http://127.0.0.1:${PORT}`);
+  
+  if (localIPs.length > 0) {
+    console.log(`\n💻 Connect from other devices using:`);
+    localIPs.forEach(ip => {
+      console.log(`   http://${ip}:${PORT}`);
+    });
+  } else {
+    console.log(`\n⚠️  No network interfaces found. Using localhost only.`);
+  }
+  
+  console.log(`\n📋 Available endpoints:`);
+  console.log(`   Health:   http://localhost:${PORT}/health`);
+  console.log(`   Email:    http://localhost:${PORT}/api/email`);
+  console.log(`${'='.repeat(60)}\n`);
   
   // Start news scraper if available and credentials are set
   if (newsScraper) {

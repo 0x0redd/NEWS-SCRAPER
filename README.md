@@ -156,24 +156,25 @@ sudo systemctl enable csc-api
 sudo systemctl start csc-api
 ```
 
-### Option 3: Docker (Optional)
+### Option 3: Docker (Recommended for Production)
 
-Create `Dockerfile`:
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3001
-CMD ["node", "index.js"]
-```
+**Prerequisites:** Docker Desktop must be installed. See [INSTALL-DOCKER.md](./INSTALL-DOCKER.md) for installation instructions.
 
-Build and run:
+**Quick Start:**
 ```bash
-docker build -t csc-api .
-docker run -d -p 3001:3001 --env-file .env --name csc-api csc-api
+# Using Docker Compose (recommended)
+docker-compose up -d
+
+# Or using npm scripts
+npm run docker:up
+
+# View logs to see IP addresses
+docker-compose logs api
 ```
+
+**Detailed Guide:** See [QUICKSTART-DOCKER.md](./QUICKSTART-DOCKER.md) and [DOCKER.md](./DOCKER.md)
+
+**Note:** If Docker is not installed, you can run the server directly with Node.js. See [RUN-WITHOUT-DOCKER.md](./RUN-WITHOUT-DOCKER.md)
 
 ## Security Best Practices
 

@@ -14,6 +14,13 @@
     "pm2:restart": "pm2 restart csc-api",
     "pm2:logs": "pm2 logs csc-api",
     "pm2:status": "pm2 status",
+    "docker:build": "docker build -t news-scraper-api .",
+    "docker:run": "docker run -d --name news-scraper-api -p 3001:3001 --env-file .env -v $(pwd)/data:/app/data --restart unless-stopped news-scraper-api",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart",
+    "get-ip": "node get-ip.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
