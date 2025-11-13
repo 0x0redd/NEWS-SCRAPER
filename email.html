@@ -1,96 +1,3 @@
-const nodemailer = require('nodemailer');
-
-// Cache transporter with a resilient pool. Recreate on failure.
-let transporter = null;
-
-const createTransporter = () => {
-  if (!process.env.YAHOO_EMAIL || !process.env.YAHOO_APP_PASSWORD) {
-    throw new Error('YAHOO_EMAIL or YAHOO_APP_PASSWORD environment variables are not set');
-  }
-  
-  // Check if using placeholder values
-  if (process.env.YAHOO_EMAIL === 'your-email@yahoo.com' || 
-      process.env.YAHOO_APP_PASSWORD === 'your-yahoo-app-password') {
-    throw new Error('YAHOO_EMAIL and YAHOO_APP_PASSWORD must be set to actual values in server/.env file');
-  }
-
-  const t = nodemailer.createTransport({
-    host: 'smtp.mail.yahoo.com',
-    port: 465,
-    secure: true,
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 100,
-    rateLimit: 5, // safety against bursts
-    auth: {
-      user: process.env.YAHOO_EMAIL.trim(),
-      pass: process.env.YAHOO_APP_PASSWORD.trim(),
-    },
-    tls: {
-      rejectUnauthorized: true,
-    },
-    socketTimeout: 30_000,
-    greetingTimeout: 15_000,
-    connectionTimeout: 15_000,
-  });
-
-  return t;
-};
-
-const resetTransporter = async () => {
-  if (transporter) {
-    try {
-      console.log('🔄 Closing existing transporter...');
-      transporter.close();
-    } catch (e) {
-      console.warn('⚠️ Error closing transporter (may already be closed):', e?.message || e);
-    }
-    transporter = null;
-  }
-};
-
-const getTransporter = async () => {
-  if (!transporter) {
-    console.log('📧 Creating new email transporter...');
-    transporter = createTransporter();
-    try {
-      await transporter.verify();
-      console.log('✅ Email transporter verified and cached');
-      console.log(`📧 Using email: ${process.env.YAHOO_EMAIL}`);
-    } catch (e) {
-      console.error('❌ Transporter verify failed on init:', e?.message || e);
-      await resetTransporter();
-      throw e;
-    }
-  }
-  return transporter;
-};
-
-const sendWelcomeEmail = async (
-  recipientEmail,
-  recipientName,
-  recipientDateNaissance,
-  recipientFiliere,
-  recipientCodeMassar,
-  recipientUserCode
-) => {
-  console.time('📧 Email processing time');
-  console.log(`📧 Attempting to send email to: ${recipientEmail}`);
-  
-  // Validate environment variables
-  if (!process.env.YAHOO_EMAIL || !process.env.YAHOO_APP_PASSWORD) {
-    const error = 'YAHOO_EMAIL or YAHOO_APP_PASSWORD environment variables are not set';
-    console.error(`❌ ${error}`);
-    console.timeEnd('📧 Email processing time');
-    return { success: false, error };
-  }
-
-  // Generate QR Code URL using QR Server API
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=CSC-MEMBER-${recipientUserCode}&format=png&ecc=M&margin=10&color=000000&bgcolor=ffffff`;
-  const currentYear = new Date().getFullYear().toString();
-
-  // HTML email template with placeholders
-  const htmlTemplate = `
 <body style="margin: 0; padding: 0; font-family: 'Courier New', monospace; background-color: #0a0a0a;">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap');
@@ -180,10 +87,8 @@ const sendWelcomeEmail = async (
 
   <!-- Member Info -->
   <div style="position:relative;z-index:1;">
-    <p style="font-size:13px;font-weight:600;letter-spacing:2px;margin:0;color:#e0e0e0;">
-      ${recipientUserCode}
-    </p>
-    <p style="font-size:11px;margin:2px 0 0 0;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+    
+    <p style="font-size:18px;margin:2px 0 0 0;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
       ${recipientName}
     </p>
 
@@ -200,6 +105,9 @@ const sendWelcomeEmail = async (
                 letter-spacing:0.5px;">
       <a href="mailto:${recipientEmail}" style="color:#aaa;text-decoration:none;">${recipientEmail}</a>
     </div>
+    <p style="font-size:13px;font-weight:600;letter-spacing:2px;margin:10px 0 0 0;color:#e0e0e0;">
+      ${recipientUserCode}
+    </p>
   </div>
 
   <!-- Stacked Field & Massar -->
@@ -220,7 +128,7 @@ const sendWelcomeEmail = async (
   <img src="${qrCodeUrl}" alt="QR"
        style="position:absolute;bottom:15px;right:20px;width:55px;height:55px;
               border-radius:6px;border:1px solid #86cb25;background:#fff;padding:3px;"> 
-              
+
 
               
               <!-- CTA Button -->
@@ -316,114 +224,3 @@ const sendWelcomeEmail = async (
     </tr>
   </table>
 </body>
-  `;
-
-  // Replace all placeholders in the template
-  const htmlContent = htmlTemplate
-    .replace(/\$\{recipientName\}/g, recipientName)
-    .replace(/\$\{recipientEmail\}/g, recipientEmail)
-    .replace(/\$\{recipientUserCode\}/g, recipientUserCode)
-    .replace(/\$\{recipientFiliere\}/g, recipientFiliere)
-    .replace(/\$\{recipientCodeMassar\}/g, recipientCodeMassar)
-    .replace(/\$\{qrCodeUrl\}/g, qrCodeUrl)
-    .replace(/YEAR_PLACEHOLDER/g, currentYear);
-
-  // Email options
-  const mailOptions = {
-    from: `"CSC - Computer Science Club" <${process.env.YAHOO_EMAIL}>`,
-    to: recipientEmail,
-    subject: '🎉 Welcome to the Computer Science Club – Your Registration is Confirmed !',
-    html: htmlContent,
-  };
-
-  let retryCount = 0;
-  const maxRetries = 2;
-  
-  while (retryCount <= maxRetries) {
-    try {
-      if (retryCount > 0) {
-        console.log(`🔄 Retry attempt ${retryCount} for ${recipientEmail}...`);
-        await resetTransporter();
-        // Wait a bit before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      const emailTransporter = await getTransporter();
-      console.log(`📧 Sending email to ${recipientEmail} (attempt ${retryCount + 1})...`);
-      const result = await emailTransporter.sendMail(mailOptions);
-      
-      console.timeEnd('📧 Email processing time');
-      console.log(`✅ Email sent successfully to ${recipientEmail}`);
-      console.log(`📧 Message ID: ${result.messageId}`);
-      
-      // Reset transporter after successful send to prevent connection issues
-      // This ensures a fresh connection for the next request
-      await resetTransporter();
-      
-      return { success: true, messageId: result.messageId };
-    } catch (error) {
-      console.error(`❌ Error sending email (attempt ${retryCount + 1}):`, error.message);
-      console.error('❌ Error code:', error.code);
-      console.error('❌ Error details:', {
-        code: error.code,
-        command: error.command,
-        response: error.response,
-        responseCode: error.responseCode,
-      });
-      
-      // Reset transporter on ANY error to prevent stuck connections
-      await resetTransporter();
-      
-      // If this was the last retry, return the error
-      if (retryCount >= maxRetries) {
-        console.timeEnd('📧 Email processing time');
-        
-        // Provide helpful error messages
-        let errorMessage = error.message || 'Unknown error occurred';
-        let helpfulHint = '';
-        
-        if (error.code === 'EAUTH') {
-          if (error.response && error.response.includes('Too many bad auth attempts')) {
-            errorMessage = 'Yahoo has temporarily locked the account due to too many failed login attempts.';
-            helpfulHint = '\n💡 Solutions:\n  1. Wait 15-30 minutes before trying again\n  2. Verify your Yahoo App Password is correct\n  3. Make sure you\'re using an App Password (not your regular password)\n  4. Generate a new App Password at: https://login.yahoo.com/account/security';
-          } else {
-            errorMessage = 'Yahoo authentication failed. Check your email and App Password.';
-            helpfulHint = '\n💡 Solutions:\n  1. Verify YAHOO_EMAIL in server/.env matches your Yahoo email\n  2. Make sure you\'re using an App Password (not your regular password)\n  3. Generate a new App Password at: https://login.yahoo.com/account/security\n  4. Check for extra spaces or special characters in your credentials';
-          }
-        } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT' || error.code === 'EPIPE' || error.code === 'ESOCKET') {
-          errorMessage = 'Could not connect to Yahoo SMTP server.';
-          helpfulHint = '\n💡 Solutions:\n  1. Check your internet connection\n  2. Verify firewall isn\'t blocking port 465\n  3. Try again in a few minutes';
-        }
-    
-        if (helpfulHint) {
-          console.error(helpfulHint);
-        }
-        
-        return { 
-          success: false, 
-          error: errorMessage,
-          details: {
-            code: error.code,
-            command: error.command,
-            response: error.response,
-            hint: helpfulHint.trim(),
-          }
-        };
-      }
-      
-      // Otherwise, increment retry count and try again
-      retryCount++;
-    }
-  }
-  
-  // This should never be reached, but just in case
-  console.timeEnd('📧 Email processing time');
-  return {
-    success: false,
-    error: 'Failed to send email after multiple attempts'
-  };
-};
-
-module.exports = {
-  sendWelcomeEmail
-};
